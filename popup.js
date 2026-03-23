@@ -470,34 +470,60 @@ document.getElementById("autoFillBtn").addEventListener("click", async () => {
   status.style.display = "none";
 
   // Step 1: grab page text + activities section via content script injection
+  // HPSM loads all content inside nested iframes — we must search recursively
   let pageData;
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => {
-        // Try to find the activities / timeline section specifically
-        const activitySelectors = [
-          '[class*="activit" i]', '[id*="activit" i]',
-          '[class*="timeline" i]', '[id*="timeline" i]',
-          '[title*="activit" i]', '[aria-label*="activit" i]',
-          '[class*="history" i]', '[id*="history" i]',
+        const ACT_SELECTORS = [
+          '[id*="journal" i]',   '[class*="journal" i]',
+          '[id*="activit" i]',   '[class*="activit" i]',
+          '[id*="timeline" i]',  '[class*="timeline" i]',
+          '[id*="history" i]',   '[class*="history" i]',
         ];
-        let activitiesText = "";
-        for (const sel of activitySelectors) {
+
+        function scrapeDoc(doc, depth) {
+          if (depth > 4) return { pageText: "", activitiesText: "" };
+          let pageText = "";
+          let activitiesText = "";
           try {
-            const el = document.querySelector(sel);
-            if (el && el.innerText && el.innerText.trim().length > 100) {
-              activitiesText = el.innerText.trim();
-              break;
+            pageText = (doc.body && doc.body.innerText) ? doc.body.innerText.trim() : "";
+            for (const sel of ACT_SELECTORS) {
+              try {
+                const el = doc.querySelector(sel);
+                if (el && el.innerText && el.innerText.trim().length > 80) {
+                  activitiesText = el.innerText.trim();
+                  break;
+                }
+              } catch {}
             }
           } catch {}
+
+          // Recurse into child iframes (same-origin in HPSM)
+          try {
+            const iframes = doc.querySelectorAll("iframe");
+            for (const f of iframes) {
+              try {
+                const childDoc = f.contentDocument || (f.contentWindow && f.contentWindow.document);
+                if (!childDoc || !childDoc.body) continue;
+                const child = scrapeDoc(childDoc, depth + 1);
+                // Keep the longest page text found
+                if (child.pageText.length > pageText.length) pageText = child.pageText;
+                // Keep first activities block found
+                if (!activitiesText && child.activitiesText) activitiesText = child.activitiesText;
+              } catch {}
+            }
+          } catch {}
+
+          return { pageText, activitiesText };
         }
-        // If no specific section found, take a large chunk of the full page
-        const fullText = document.body.innerText;
+
+        const result = scrapeDoc(document, 0);
         return {
-          pageText:       fullText.slice(0, 10000),
-          activitiesText: activitiesText.slice(0, 6000),
+          pageText:       result.pageText.slice(0, 12000),
+          activitiesText: result.activitiesText.slice(0, 8000),
         };
       },
     });
@@ -514,33 +540,36 @@ document.getElementById("autoFillBtn").addEventListener("click", async () => {
     ? `=== MAIN PAGE ===\n${pageData.pageText}\n\n=== ACTIVITIES / TIMELINE SECTION ===\n${pageData.activitiesText}`
     : pageData.pageText;
 
-  const systemPrompt = `You are a ticket data extractor for a tax authority support system (GBM L1 support).
-Given webpage text, extract ticket fields and return ONLY a valid JSON object (no markdown, no explanation).
+  const systemPrompt = `You are a ticket data extractor for an HP Service Manager (HPSM) system used by a tax authority support team (GBM L1).
+Given webpage text and journal/activities text, extract ticket fields and return ONLY a valid JSON object (no markdown, no explanation).
 Omit any field you cannot confidently find.
 
-EXTRACTION RULES — follow these carefully:
+EXTRACTION RULES — follow exactly:
 
-1. caseId: the ticket/case number (e.g. CAS-23393-L3T8). Look for patterns like CAS-XXXXX-XXXX.
+1. caseId: the ticket/interaction number. Typically looks like IM10012345 or SD10012345 or a similar alphanumeric ID shown as the record number.
 
-2. tin: the taxpayer ID / account number. It typically starts with the digit 5. Look for a numeric ID associated with the customer/taxpayer.
+2. tin: the taxpayer account number. It typically STARTS WITH THE DIGIT 5 (e.g. 500123456). Look for it near labels like "Account", "TIN", "Tax ID", "QID", "FB".
 
-3. creationDate: the FIRST (earliest) date that appears in the Activities / Timeline section — this is when the case was opened. Format: DD/MM/YYYY.
+3. creationDate: look in the ACTIVITIES/JOURNAL section for the EARLIEST (first/oldest) date entry — this is the case open date. HPSM journal entries look like "DD/MM/YYYY HH:MM:SS - Name". Format output as DD/MM/YYYY.
 
-4. assignDate: look through the Activities section for the LAST (most recent) entry that says "Transferred to L1", "Reassigned to L1", "Assigned to GBM_L1", or similar. Use that entry's date. Format: DD/MM/YYYY.
+4. assignDate: scan the ACTIVITIES/JOURNAL for entries mentioning "Transferred to GBM_L1", "Reassigned to GBM_L1", "Assigned to GBM_L1", "Transfer to L1", or similar. Take the LAST (most recent) such entry's date. Format: DD/MM/YYYY.
 
-5. handlingDate: today's date or the date the case was resolved/handled if shown. Format: DD/MM/YYYY.
+5. handlingDate: the date the case was resolved or last updated. If not found leave it out.
 
-6. status: look for the current case status label on the page. Map to exactly one of: "Resolved", "In progress", "Waiting for details". If the page says "Closed" or "Resolved" use "Resolved". If "Open" or "In Progress" use "In progress". If "Pending" or "Waiting" use "Waiting for details".
+6. status: find the current Status field on the page. Map to exactly one of:
+   - "Resolved" if status is Closed, Resolved, or Fulfilled
+   - "In progress" if status is Open, In Progress, Active, or Work In Progress
+   - "Waiting for details" if status is Pending, Waiting, or Suspended
 
-7. workgroup: the current assigned team/queue. Map to exactly one of: "GBM_L1", "GBM_L2", "GTA_Business", "Transfer to BU".
+7. workgroup: the current assignment group/queue. Map to exactly one of: "GBM_L1", "GBM_L2", "GTA_Business", "Transfer to BU".
 
-8. description: copy the full customer issue description text block from the page as-is. This is usually a large paragraph describing what the customer needs.
+8. description: copy the full issue description or problem summary text block from the page as-is.
 
-9. reopened: boolean true if the Activities section contains any entry mentioning "Reopened", "Reopen", or the case was closed then opened again. Otherwise false.
+9. reopened: boolean true if journal/activities contains any entry mentioning "Reopen", "Reopened", or the case was closed and then opened again. Otherwise false.
 
-10. lastClosedBy: full name of the agent who last closed or resolved the case, if visible.
+10. lastClosedBy: full name of the agent who last closed/resolved the case, from the journal if visible.
 
-11. escalationReason: reason for escalation or reassignment to L2/Business if present.
+11. escalationReason: reason for escalation or reassignment to L2/Business if shown.
 
 DO NOT extract or guess issueType — leave it out entirely.
 DO NOT invent values. Only include fields you are confident about.`;
