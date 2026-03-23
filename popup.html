@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GBM L1 Ticket Entry</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="header">
+    <div class="header-title">
+      <span class="header-icon">🎫</span>
+      <span>GBM L1 Ticket Entry</span>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="form">New Ticket</button>
+      <button class="tab-btn" data-tab="history">History</button>
+      <button class="tab-btn" data-tab="settings">Settings</button>
+    </div>
+  </div>
+
+  <!-- NEW TICKET TAB -->
+  <div id="tab-form" class="tab-content active">
+    <button type="button" id="autoFillBtn" class="btn-ai">✨ Auto-fill from current page</button>
+    <div id="aiStatus" class="ai-status" style="display:none;"></div>
+    <form id="ticketForm">
+
+      <div class="form-row two-col">
+        <div class="form-group">
+          <label>Case ID <span class="required">*</span></label>
+          <input type="text" id="caseId" placeholder="e.g. CAS-23393-L3T8" required />
+        </div>
+        <div class="form-group">
+          <label>TIN / FB / QID</label>
+          <input type="text" id="tin" placeholder="Taxpayer ID" />
+        </div>
+      </div>
+
+      <div class="form-row three-col">
+        <div class="form-group">
+          <label>Creation Date <span class="required">*</span></label>
+          <div class="date-wrapper">
+            <input type="text" id="creationDate" placeholder="DD/MM/YYYY" maxlength="10" required />
+            <button type="button" class="date-pick-btn" data-target="creationDate">📅</button>
+            <input type="date" class="hidden-picker" data-display="creationDate" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Assigned to L1</label>
+          <div class="date-wrapper">
+            <input type="text" id="assignDate" placeholder="DD/MM/YYYY" maxlength="10" />
+            <button type="button" class="date-pick-btn" data-target="assignDate">📅</button>
+            <input type="date" class="hidden-picker" data-display="assignDate" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Handling Date</label>
+          <div class="date-wrapper">
+            <input type="text" id="handlingDate" placeholder="DD/MM/YYYY" maxlength="10" />
+            <button type="button" class="date-pick-btn" data-target="handlingDate">📅</button>
+            <input type="date" class="hidden-picker" data-display="handlingDate" />
+          </div>
+        </div>
+      </div>
+
+      <div class="form-row two-col">
+        <div class="form-group">
+          <label>Owner <span class="required">*</span></label>
+          <select id="owner" required>
+            <option value="">-- Select Owner --</option>
+            <option>Abdallah Alnsour</option>
+            <option>Sami Al-Zabet</option>
+            <option>Lina Shurair</option>
+            <option>Hani Ababneh</option>
+            <option>Wesam Nafi</option>
+            <option>Ritesh</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Priority</label>
+          <select id="priority">
+            <option value="P 3" selected>P 3</option>
+            <option value="P 2">P 2</option>
+            <option value="P 1">P 1</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row two-col">
+        <div class="form-group">
+          <label>Status <span class="required">*</span></label>
+          <select id="status" required>
+            <option value="Resolved" selected>Resolved</option>
+            <option value="In progress">In Progress</option>
+            <option value="Waiting for details">Waiting for Details</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Workgroup <span class="required">*</span></label>
+          <select id="workgroup" required>
+            <option value="GBM_L1" selected>GBM_L1</option>
+            <option value="GBM_L2">GBM_L2</option>
+            <option value="GTA_Business">GTA_Business</option>
+            <option value="Transfer to BU">Transfer to BU</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Type of Issue <span class="required">*</span></label>
+        <select id="issueType" required>
+          <option value="">-- Select Issue Type --</option>
+          <optgroup label="Company / Registration">
+            <option value="تحديث بيانات الشركة">تحديث بيانات الشركة — Update Company Data</option>
+            <option value="تسجيل">تسجيل — Registration</option>
+            <option value="تفعيل رقم ضريبي">تفعيل رقم ضريبي — Activate Tax ID</option>
+            <option value="المخول بالتوقيع">المخول بالتوقيع — Authorized Signatory</option>
+            <option value="توكيل">توكيل — Power of Attorney</option>
+          </optgroup>
+          <optgroup label="Periods / Filing">
+            <option value="فتح / الغاء / تعديل فترات">فتح / الغاء / تعديل فترات — Open/Cancel/Modify Periods</option>
+            <option value="تسجل / ترحيل اقرارات">تسجل / ترحيل اقرارات — Filing/Migrating Returns</option>
+          </optgroup>
+          <optgroup label="Finance">
+            <option value="سداد">سداد — Payment</option>
+            <option value="جزاءات">جزاءات — Penalties</option>
+            <option value="اعفاء">اعفاء — Exemptions</option>
+          </optgroup>
+          <optgroup label="Documents / Certificates">
+            <option value="شهادات">شهادات — Certificates</option>
+            <option value="مبايعه">مبايعه — Property Transfer/Sale</option>
+          </optgroup>
+          <optgroup label="General">
+            <option value="طلبات">طلبات — General Requests</option>
+            <option value="خطأ تقني">خطأ تقني — Technical Error</option>
+          </optgroup>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="description" rows="3" placeholder="Case details / problem description..."></textarea>
+      </div>
+
+      <div class="form-row two-col">
+        <div class="form-group">
+          <label>Reopened</label>
+          <div class="toggle-row">
+            <label class="toggle">
+              <input type="checkbox" id="reopened" />
+              <span class="slider"></span>
+            </label>
+            <span class="toggle-label" id="reopenedLabel">No</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Last Closed By</label>
+          <select id="lastClosedBy">
+            <option value="">-- Select --</option>
+            <option>Abdallah Alnsour</option>
+            <option>Sami Al-Zabet</option>
+            <option>Lina Shurair</option>
+            <option>Hani Ababneh</option>
+            <option>Wesam Nafi</option>
+            <option>Ritesh</option>
+            <option value="Business">Business</option>
+            <option value="L2">L2</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group" id="escalationGroup" style="display:none;">
+        <label>Reason for Reassignment to L2 / Business</label>
+        <textarea id="escalationReason" rows="2" placeholder="Explain why this case was escalated..."></textarea>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" id="clearBtn" class="btn-secondary">Clear</button>
+        <button type="submit" class="btn-primary">Save Ticket</button>
+      </div>
+
+    </form>
+
+    <div id="successMsg" class="success-msg" style="display:none;">
+      ✅ Ticket saved successfully!
+    </div>
+  </div>
+
+  <!-- HISTORY TAB -->
+  <div id="tab-history" class="tab-content">
+    <div class="history-toolbar">
+      <input type="text" id="searchBox" placeholder="🔍 Search by Case ID, TIN, Owner..." />
+      <button id="exportBtn" class="btn-export">Export CSV</button>
+      <button id="clearAllBtn" class="btn-danger">Clear All</button>
+    </div>
+    <div id="ticketCount" class="ticket-count"></div>
+    <div id="historyList"></div>
+  </div>
+
+  <!-- SETTINGS TAB -->
+  <div id="tab-settings" class="tab-content">
+    <div class="settings-section">
+      <div class="settings-title">OpenAI API Settings</div>
+      <div class="settings-desc">Enter your OpenAI API key to enable auto-fill. The key is stored locally on your device and never shared.</div>
+
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off" />
+      </div>
+
+      <div class="form-group">
+        <label>Model</label>
+        <select id="openaiModel">
+          <option value="gpt-4o-mini">GPT-4o Mini — fast &amp; cheap (recommended)</option>
+          <option value="gpt-4o">GPT-4o — more accurate</option>
+        </select>
+      </div>
+
+      <div class="form-actions" style="justify-content:flex-start;">
+        <button type="button" id="saveSettingsBtn" class="btn-primary">Save Settings</button>
+      </div>
+
+      <div id="settingsSaved" class="success-msg" style="display:none; margin-top:10px;">
+        Settings saved!
+      </div>
+
+      <div class="settings-help">
+        <strong>How to get an API key:</strong><br/>
+        1. Go to platform.openai.com<br/>
+        2. Sign in → API Keys → Create new secret key<br/>
+        3. Paste it above and click Save
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
