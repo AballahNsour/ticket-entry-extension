@@ -469,15 +469,39 @@ document.getElementById("autoFillBtn").addEventListener("click", async () => {
   btn.textContent = "Reading page...";
   status.style.display = "none";
 
-  // Step 1: grab page text via content script injection
-  let pageText;
+  // Step 1: grab page text + activities section via content script injection
+  let pageData;
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: () => document.body.innerText.slice(0, 8000),
+      func: () => {
+        // Try to find the activities / timeline section specifically
+        const activitySelectors = [
+          '[class*="activit" i]', '[id*="activit" i]',
+          '[class*="timeline" i]', '[id*="timeline" i]',
+          '[title*="activit" i]', '[aria-label*="activit" i]',
+          '[class*="history" i]', '[id*="history" i]',
+        ];
+        let activitiesText = "";
+        for (const sel of activitySelectors) {
+          try {
+            const el = document.querySelector(sel);
+            if (el && el.innerText && el.innerText.trim().length > 100) {
+              activitiesText = el.innerText.trim();
+              break;
+            }
+          } catch {}
+        }
+        // If no specific section found, take a large chunk of the full page
+        const fullText = document.body.innerText;
+        return {
+          pageText:       fullText.slice(0, 10000),
+          activitiesText: activitiesText.slice(0, 6000),
+        };
+      },
     });
-    pageText = results[0].result;
+    pageData = results[0].result;
   } catch (err) {
     showAiStatus("Could not read the page. Make sure you're on a ticket page.", "error");
     resetBtn();
@@ -486,23 +510,40 @@ document.getElementById("autoFillBtn").addEventListener("click", async () => {
 
   btn.textContent = "Asking AI...";
 
-  const systemPrompt = `You are a ticket data extractor for a tax authority support system.
-Given webpage text, extract ticket fields and return ONLY a valid JSON object (no markdown, no explanation).
-Omit any field you cannot confidently find. Use these exact keys and allowed values:
+  const combinedText = pageData.activitiesText
+    ? `=== MAIN PAGE ===\n${pageData.pageText}\n\n=== ACTIVITIES / TIMELINE SECTION ===\n${pageData.activitiesText}`
+    : pageData.pageText;
 
-- caseId: the ticket/case ID string (e.g. CAS-23393-L3T8)
-- tin: taxpayer ID, Facebook ID, or QID number
-- creationDate: date the case was created — format DD/MM/YYYY
-- assignDate: date assigned to L1 — format DD/MM/YYYY
-- handlingDate: date handled/resolved — format DD/MM/YYYY
-- priority: exactly one of "P 1", "P 2", "P 3"
-- status: exactly one of "Resolved", "In progress", "Waiting for details"
-- workgroup: exactly one of "GBM_L1", "GBM_L2", "GTA_Business", "Transfer to BU"
-- issueType: exactly one of: ${ISSUE_TYPE_VALUES.join(" | ")}
-- description: brief description of the issue in the agent's language
-- reopened: boolean true or false
-- lastClosedBy: full name of person who last closed the case
-- escalationReason: reason for escalation or reassignment if present`;
+  const systemPrompt = `You are a ticket data extractor for a tax authority support system (GBM L1 support).
+Given webpage text, extract ticket fields and return ONLY a valid JSON object (no markdown, no explanation).
+Omit any field you cannot confidently find.
+
+EXTRACTION RULES — follow these carefully:
+
+1. caseId: the ticket/case number (e.g. CAS-23393-L3T8). Look for patterns like CAS-XXXXX-XXXX.
+
+2. tin: the taxpayer ID / account number. It typically starts with the digit 5. Look for a numeric ID associated with the customer/taxpayer.
+
+3. creationDate: the FIRST (earliest) date that appears in the Activities / Timeline section — this is when the case was opened. Format: DD/MM/YYYY.
+
+4. assignDate: look through the Activities section for the LAST (most recent) entry that says "Transferred to L1", "Reassigned to L1", "Assigned to GBM_L1", or similar. Use that entry's date. Format: DD/MM/YYYY.
+
+5. handlingDate: today's date or the date the case was resolved/handled if shown. Format: DD/MM/YYYY.
+
+6. status: look for the current case status label on the page. Map to exactly one of: "Resolved", "In progress", "Waiting for details". If the page says "Closed" or "Resolved" use "Resolved". If "Open" or "In Progress" use "In progress". If "Pending" or "Waiting" use "Waiting for details".
+
+7. workgroup: the current assigned team/queue. Map to exactly one of: "GBM_L1", "GBM_L2", "GTA_Business", "Transfer to BU".
+
+8. description: copy the full customer issue description text block from the page as-is. This is usually a large paragraph describing what the customer needs.
+
+9. reopened: boolean true if the Activities section contains any entry mentioning "Reopened", "Reopen", or the case was closed then opened again. Otherwise false.
+
+10. lastClosedBy: full name of the agent who last closed or resolved the case, if visible.
+
+11. escalationReason: reason for escalation or reassignment to L2/Business if present.
+
+DO NOT extract or guess issueType — leave it out entirely.
+DO NOT invent values. Only include fields you are confident about.`;
 
   let extracted;
   try {
@@ -516,10 +557,10 @@ Omit any field you cannot confidently find. Use these exact keys and allowed val
         model,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user",   content: pageText },
+          { role: "user",   content: combinedText },
         ],
         temperature: 0,
-        max_tokens: 600,
+        max_tokens: 1000,
       }),
     });
 
@@ -542,7 +583,7 @@ Omit any field you cannot confidently find. Use these exact keys and allowed val
   const merged = { ...readFormState() };
   const map = [
     "caseId","tin","creationDate","assignDate","handlingDate",
-    "priority","status","workgroup","issueType","description",
+    "priority","status","workgroup","description",
     "lastClosedBy","escalationReason",
   ];
   map.forEach((k) => { if (extracted[k] != null && extracted[k] !== "") merged[k] = extracted[k]; });
