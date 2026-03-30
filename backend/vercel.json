@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "functions": {
+    "api/tickets.js": { "memory": 128, "maxDuration": 10 }
+  }
+}

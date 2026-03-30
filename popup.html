@@ -182,7 +182,8 @@
     </form>
 
     <div id="successMsg" class="success-msg" style="display:none;">
-      ✅ Ticket saved successfully!
+      ✅ Ticket saved!
+      <span id="syncStatus"></span>
     </div>
   </div>
 
@@ -230,6 +231,33 @@
         2. Sign in → API Keys → Create new secret key<br/>
         3. Paste it above and click Save
       </div>
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <div class="settings-section">
+      <div class="settings-title">Database Sync (Neon)</div>
+      <div class="settings-desc">Sync every saved ticket to a Neon PostgreSQL database via a Vercel API. See the <code>backend/</code> folder in the repo for setup steps.</div>
+
+      <div class="form-group">
+        <label>API URL</label>
+        <input type="text" id="neonApiUrl" placeholder="https://your-app.vercel.app/api/tickets" autocomplete="off" />
+      </div>
+
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="password" id="neonApiKey" placeholder="your-secret-api-key" autocomplete="off" />
+      </div>
+
+      <div class="form-actions" style="justify-content:flex-start;">
+        <button type="button" id="saveNeonBtn" class="btn-primary">Save</button>
+        <button type="button" id="testNeonBtn" class="btn-secondary">Test Connection</button>
+      </div>
+
+      <div id="neonSaved" class="success-msg" style="display:none; margin-top:10px;">
+        Neon settings saved!
+      </div>
+      <div id="neonTestResult" class="ai-status" style="display:none; margin-top:10px;"></div>
     </div>
   </div>
 

@@ -245,14 +245,18 @@ document.getElementById("ticketForm").addEventListener("submit", function (e) {
       clearDraft();
       showSuccess();
       resetForm(ownerVal);
+      syncTicketToNeon(ticket);
     });
   });
 });
 
 function showSuccess() {
+  const syncEl = document.getElementById("syncStatus");
+  syncEl.textContent = "";
+  syncEl.className = "";
   const msg = document.getElementById("successMsg");
   msg.style.display = "block";
-  setTimeout(() => (msg.style.display = "none"), 2500);
+  setTimeout(() => (msg.style.display = "none"), 4000);
 }
 
 function resetForm(ownerToRestore) {
@@ -384,6 +388,110 @@ document.getElementById("exportBtn").addEventListener("click", () => {
     a.click();
   });
 });
+
+// ── NEON SYNC ─────────────────────────────────────────────────────────────────
+
+const LS_NEON = "gbm_l1_neon_settings";
+
+function loadNeonSettings() {
+  try { return JSON.parse(localStorage.getItem(LS_NEON)) ?? {}; }
+  catch { return {}; }
+}
+
+function saveNeonSettings(s) {
+  localStorage.setItem(LS_NEON, JSON.stringify(s));
+  try { chrome.storage.local.set({ neonSettings: s }); } catch {}
+}
+
+(function initNeonSettings() {
+  try {
+    chrome.storage.local.get("neonSettings", (data) => {
+      const s = (!chrome.runtime.lastError && data.neonSettings) || loadNeonSettings();
+      if (s.apiUrl) document.getElementById("neonApiUrl").value = s.apiUrl;
+      if (s.apiKey) document.getElementById("neonApiKey").value = s.apiKey;
+    });
+  } catch {
+    const s = loadNeonSettings();
+    if (s.apiUrl) document.getElementById("neonApiUrl").value = s.apiUrl;
+    if (s.apiKey) document.getElementById("neonApiKey").value = s.apiKey;
+  }
+})();
+
+document.getElementById("saveNeonBtn").addEventListener("click", () => {
+  const s = {
+    apiUrl: document.getElementById("neonApiUrl").value.trim(),
+    apiKey: document.getElementById("neonApiKey").value.trim(),
+  };
+  saveNeonSettings(s);
+  const msg = document.getElementById("neonSaved");
+  msg.style.display = "block";
+  setTimeout(() => (msg.style.display = "none"), 2000);
+});
+
+document.getElementById("testNeonBtn").addEventListener("click", async () => {
+  const result = document.getElementById("neonTestResult");
+  const s = loadNeonSettings();
+  const apiUrl = document.getElementById("neonApiUrl").value.trim() || s.apiUrl;
+  const apiKey = document.getElementById("neonApiKey").value.trim() || s.apiKey;
+
+  if (!apiUrl || !apiKey) {
+    result.textContent = "Enter an API URL and key first.";
+    result.className = "ai-status error";
+    result.style.display = "block";
+    return;
+  }
+
+  result.textContent = "Testing...";
+  result.className = "ai-status";
+  result.style.display = "block";
+
+  try {
+    const res = await fetch(apiUrl, { headers: { "x-api-key": apiKey } });
+    if (res.ok) {
+      result.textContent = "Connection successful!";
+      result.className = "ai-status success";
+    } else {
+      result.textContent = `Failed: HTTP ${res.status}`;
+      result.className = "ai-status error";
+    }
+  } catch (err) {
+    result.textContent = `Failed: ${err.message}`;
+    result.className = "ai-status error";
+  }
+});
+
+async function syncTicketToNeon(ticket) {
+  const syncEl = document.getElementById("syncStatus");
+  let s;
+  try {
+    s = await new Promise((resolve) => {
+      chrome.storage.local.get("neonSettings", (data) => {
+        resolve((!chrome.runtime.lastError && data.neonSettings) || loadNeonSettings());
+      });
+    });
+  } catch {
+    s = loadNeonSettings();
+  }
+
+  if (!s.apiUrl || !s.apiKey) { syncEl.textContent = ""; return; }
+
+  syncEl.className = "syncing";
+  syncEl.textContent = "↑ Syncing...";
+
+  try {
+    const res = await fetch(s.apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": s.apiKey },
+      body: JSON.stringify(ticket),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    syncEl.className = "synced";
+    syncEl.textContent = "☁ Synced";
+  } catch (err) {
+    syncEl.className = "failed";
+    syncEl.textContent = "⚠ Sync failed";
+  }
+}
 
 // ── SETTINGS ─────────────────────────────────────────────────────────────────
 

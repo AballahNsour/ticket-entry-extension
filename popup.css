@@ -417,7 +417,23 @@ input:checked + .slider:before { transform: translateX(16px); }
 .ai-status.success { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
 .ai-status.error   { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
 
+/* ── SYNC STATUS ── */
+#syncStatus {
+  font-size: 11.5px;
+  font-weight: 600;
+  margin-left: 8px;
+  display: inline-block;
+}
+#syncStatus.syncing { color: #1d4ed8; }
+#syncStatus.synced  { color: #065f46; }
+#syncStatus.failed  { color: #b45309; }
+
 /* ── SETTINGS TAB ── */
+.settings-divider {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 16px 0;
+}
 .settings-section { padding: 4px 0; }
 
 .settings-title {
