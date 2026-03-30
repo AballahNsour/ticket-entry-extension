@@ -469,67 +469,81 @@ document.getElementById("autoFillBtn").addEventListener("click", async () => {
   btn.textContent = "Reading page...";
   status.style.display = "none";
 
-  // Step 1: grab page text + activities section via content script injection
-  // HPSM loads all content inside nested iframes — we must search recursively
-  let pageData;
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => {
-        const ACT_SELECTORS = [
-          '[id*="journal" i]',   '[class*="journal" i]',
-          '[id*="activit" i]',   '[class*="activit" i]',
-          '[id*="timeline" i]',  '[class*="timeline" i]',
-          '[id*="history" i]',   '[class*="history" i]',
-        ];
+  // Step 1: grab page text + activities — retry up to 3 times if content not ready
+  // HPSM loads content into nested iframes dynamically; sometimes they aren't ready yet
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-        function scrapeDoc(doc, depth) {
-          if (depth > 4) return { pageText: "", activitiesText: "" };
-          let pageText = "";
-          let activitiesText = "";
+  const scraperFunc = () => {
+    const ACT_SELECTORS = [
+      '[id*="journal" i]',   '[class*="journal" i]',
+      '[id*="activit" i]',   '[class*="activit" i]',
+      '[id*="timeline" i]',  '[class*="timeline" i]',
+      '[id*="history" i]',   '[class*="history" i]',
+    ];
+
+    function scrapeDoc(doc, depth) {
+      if (depth > 4) return { pageText: "", activitiesText: "" };
+      let pageText = "";
+      let activitiesText = "";
+      try {
+        pageText = (doc.body && doc.body.innerText) ? doc.body.innerText.trim() : "";
+        for (const sel of ACT_SELECTORS) {
           try {
-            pageText = (doc.body && doc.body.innerText) ? doc.body.innerText.trim() : "";
-            for (const sel of ACT_SELECTORS) {
-              try {
-                const el = doc.querySelector(sel);
-                if (el && el.innerText && el.innerText.trim().length > 80) {
-                  activitiesText = el.innerText.trim();
-                  break;
-                }
-              } catch {}
+            const el = doc.querySelector(sel);
+            if (el && el.innerText && el.innerText.trim().length > 80) {
+              activitiesText = el.innerText.trim();
+              break;
             }
           } catch {}
-
-          // Recurse into child iframes (same-origin in HPSM)
-          try {
-            const iframes = doc.querySelectorAll("iframe");
-            for (const f of iframes) {
-              try {
-                const childDoc = f.contentDocument || (f.contentWindow && f.contentWindow.document);
-                if (!childDoc || !childDoc.body) continue;
-                const child = scrapeDoc(childDoc, depth + 1);
-                // Keep the longest page text found
-                if (child.pageText.length > pageText.length) pageText = child.pageText;
-                // Keep first activities block found
-                if (!activitiesText && child.activitiesText) activitiesText = child.activitiesText;
-              } catch {}
-            }
-          } catch {}
-
-          return { pageText, activitiesText };
         }
+      } catch {}
 
-        const result = scrapeDoc(document, 0);
-        return {
-          pageText:       result.pageText.slice(0, 12000),
-          activitiesText: result.activitiesText.slice(0, 8000),
-        };
-      },
-    });
-    pageData = results[0].result;
-  } catch (err) {
-    showAiStatus("Could not read the page. Make sure you're on a ticket page.", "error");
+      try {
+        const iframes = doc.querySelectorAll("iframe");
+        for (const f of iframes) {
+          try {
+            const childDoc = f.contentDocument || (f.contentWindow && f.contentWindow.document);
+            if (!childDoc || !childDoc.body) continue;
+            const child = scrapeDoc(childDoc, depth + 1);
+            if (child.pageText.length > pageText.length) pageText = child.pageText;
+            if (!activitiesText && child.activitiesText) activitiesText = child.activitiesText;
+          } catch {}
+        }
+      } catch {}
+
+      return { pageText, activitiesText };
+    }
+
+    const result = scrapeDoc(document, 0);
+    return {
+      pageText:       result.pageText.slice(0, 12000),
+      activitiesText: result.activitiesText.slice(0, 8000),
+    };
+  };
+
+  // Retry loop — wait 1.5s between attempts if page content looks empty
+  let pageData = null;
+  const MIN_CONTENT = 300; // chars — less than this means iframes not ready yet
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      if (attempt > 1) {
+        btn.textContent = `Reading page (attempt ${attempt}/3)...`;
+        await new Promise(r => setTimeout(r, 1500));
+      }
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: scraperFunc,
+      });
+      const data = results[0].result;
+      if (data && data.pageText.length >= MIN_CONTENT) {
+        pageData = data;
+        break;
+      }
+    } catch {}
+  }
+
+  if (!pageData || pageData.pageText.length < MIN_CONTENT) {
+    showAiStatus("Could not read the page — make sure the ticket is fully loaded and try again.", "error");
     resetBtn();
     return;
   }
