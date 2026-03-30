@@ -479,7 +479,37 @@ document.getElementById("autoFillBtn").addEventListener("click", async () => {
       '[id*="activit" i]',   '[class*="activit" i]',
       '[id*="timeline" i]',  '[class*="timeline" i]',
       '[id*="history" i]',   '[class*="history" i]',
+      '[id*="audit" i]',     '[class*="audit" i]',
+      'table',
     ];
+
+    // Find the best activities/timeline table in a document by looking for one
+    // that contains typical HPSM activity keywords (Reassignment, Open, etc.)
+    function findActivitiesTable(doc) {
+      const keywords = ["Reassignment", "Phase Change", "Status Change", "Open", "Assignment"];
+      // First try named selectors (faster)
+      for (const sel of ACT_SELECTORS.slice(0, -1)) {
+        try {
+          const els = doc.querySelectorAll(sel);
+          for (const el of els) {
+            const t = el.innerText || "";
+            if (t.length > 80 && keywords.some(k => t.includes(k))) return t.trim();
+          }
+        } catch {}
+      }
+      // Fall back: scan all tables for activity keywords
+      try {
+        const tables = doc.querySelectorAll("table");
+        let best = "";
+        for (const tbl of tables) {
+          const t = tbl.innerText || "";
+          const hits = keywords.filter(k => t.includes(k)).length;
+          if (hits >= 2 && t.length > best.length) best = t.trim();
+        }
+        if (best) return best;
+      } catch {}
+      return "";
+    }
 
     function scrapeDoc(doc, depth) {
       if (depth > 4) return { pageText: "", activitiesText: "" };
@@ -487,15 +517,7 @@ document.getElementById("autoFillBtn").addEventListener("click", async () => {
       let activitiesText = "";
       try {
         pageText = (doc.body && doc.body.innerText) ? doc.body.innerText.trim() : "";
-        for (const sel of ACT_SELECTORS) {
-          try {
-            const el = doc.querySelector(sel);
-            if (el && el.innerText && el.innerText.trim().length > 80) {
-              activitiesText = el.innerText.trim();
-              break;
-            }
-          } catch {}
-        }
+        activitiesText = findActivitiesTable(doc);
       } catch {}
 
       try {
@@ -507,6 +529,7 @@ document.getElementById("autoFillBtn").addEventListener("click", async () => {
             const child = scrapeDoc(childDoc, depth + 1);
             if (child.pageText.length > pageText.length) pageText = child.pageText;
             if (!activitiesText && child.activitiesText) activitiesText = child.activitiesText;
+            else if (child.activitiesText.length > activitiesText.length) activitiesText = child.activitiesText;
           } catch {}
         }
       } catch {}
@@ -516,14 +539,15 @@ document.getElementById("autoFillBtn").addEventListener("click", async () => {
 
     const result = scrapeDoc(document, 0);
     return {
-      pageText:       result.pageText.slice(0, 12000),
-      activitiesText: result.activitiesText.slice(0, 8000),
+      pageText:       result.pageText.slice(0, 20000),
+      activitiesText: result.activitiesText.slice(0, 15000),
     };
   };
 
-  // Retry loop — wait 1.5s between attempts if page content looks empty
+  // Retry loop — wait 1.5s between attempts if page content or activities not ready
   let pageData = null;
-  const MIN_CONTENT = 300; // chars — less than this means iframes not ready yet
+  const MIN_CONTENT    = 300;  // minimum main page text
+  const MIN_ACTIVITIES = 100;  // minimum activities table text
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       if (attempt > 1) {
@@ -535,9 +559,14 @@ document.getElementById("autoFillBtn").addEventListener("click", async () => {
         func: scraperFunc,
       });
       const data = results[0].result;
-      if (data && data.pageText.length >= MIN_CONTENT) {
+      if (data && data.pageText.length >= MIN_CONTENT &&
+          data.activitiesText.length >= MIN_ACTIVITIES) {
         pageData = data;
         break;
+      }
+      // If activities not found yet but main page is ready, keep trying
+      if (data && data.pageText.length >= MIN_CONTENT && attempt === 3) {
+        pageData = data; // use whatever we have on last attempt
       }
     } catch {}
   }
@@ -564,9 +593,9 @@ EXTRACTION RULES — follow exactly:
 
 2. tin: the taxpayer account number. It typically STARTS WITH THE DIGIT 5 (e.g. 500123456). Look for it near labels like "Account", "TIN", "Tax ID", "QID", "FB".
 
-3. creationDate: look in the ACTIVITIES/JOURNAL section for the EARLIEST (first/oldest) date entry — this is the case open date. HPSM journal entries look like "DD/MM/YYYY HH:MM:SS - Name". Format output as DD/MM/YYYY.
+3. creationDate: look in the ACTIVITIES table for the row whose Type column says "Open" — that row's date is the ticket open/creation date. The Activities table has columns: Date/Time, Type, Operator, Description. If no "Open" row exists, fall back to the earliest (oldest) date in the entire table. Format output as DD/MM/YYYY.
 
-4. assignDate: scan the ACTIVITIES/JOURNAL for entries mentioning "Transferred to GBM_L1", "Reassigned to GBM_L1", "Assigned to GBM_L1", "Transfer to L1", or similar. Take the LAST (most recent) such entry's date. Format: DD/MM/YYYY.
+4. assignDate: scan the ACTIVITIES table for ALL rows whose Type column says "Reassignment" AND whose Description contains "to GTA-FUNCTIONAL-L1" or "to GBM_L1" or "to L1" (i.e. reassigned TO an L1 group). The ticket may be reassigned to L1 multiple times — take the MOST RECENT (latest date, i.e. the one closest to the TOP of the table) among those rows. Format: DD/MM/YYYY.
 
 5. handlingDate: the date the case was resolved or last updated. If not found leave it out.
 
