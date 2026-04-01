@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Fast ticket entry tool for GBM L1 support team",
   "permissions": ["storage", "activeTab", "scripting", "tabs"],
-  "host_permissions": ["https://api.openai.com/*"],
+  "host_permissions": ["https://api.openai.com/*", "https://txtexten.vercel.app/*"],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
