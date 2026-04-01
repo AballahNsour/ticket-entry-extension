@@ -429,11 +429,6 @@ input:checked + .slider:before { transform: translateX(16px); }
 #syncStatus.failed  { color: #b45309; }
 
 /* ── SETTINGS TAB ── */
-.settings-divider {
-  border: none;
-  border-top: 1px solid #e2e8f0;
-  margin: 16px 0;
-}
 .settings-section { padding: 4px 0; }
 
 .settings-title {
